@@ -44,9 +44,24 @@ async function editMessage(token, chatId, messageId, text, extra = {}) {
 
 async function getAuthenticatedUser(token) {
   const res = await fetch(`${GITHUB_API}/user`, {
-    headers: { Authorization: `token ${token}`, Accept: 'application/vnd.github.v3+json' },
+    headers: {
+      Authorization: `token ${token}`,
+      Accept: 'application/vnd.github.v3+json',
+      'User-Agent': 'shinotbot-cloudflare-worker',
+    },
   });
-  const data = await res.json();
+  
+  const text = await res.text();
+  
+  // Try to parse as JSON
+  let data;
+  try {
+    data = JSON.parse(text);
+  } catch (e) {
+    // Not JSON - likely an error page
+    throw new Error(`GitHub returned non-JSON response (${res.status}): ${text.substring(0, 100)}`);
+  }
+  
   if (!res.ok) {
     throw new Error(`GitHub API error ${res.status}: ${data.message || 'Unknown error'}`);
   }
@@ -291,6 +306,15 @@ async function handlePatSubmission(token, chatId, text, kv) {
   }
 
   const trimmed = text.trim();
+  
+  // Log for debugging
+  console.log(`Received message from chat ${chatId}:`);
+  console.log(`  Length: ${trimmed.length}`);
+  console.log(`  First 10 chars: [${trimmed.substring(0, 10)}]`);
+  console.log(`  Last 5 chars: [${trimmed.substring(trimmed.length - 5)}]`);
+  console.log(`  Contains spaces: ${trimmed.includes(' ')}`);
+  console.log(`  Contains newlines: ${trimmed.includes('\n')}`);
+  console.log(`  Char codes of first 20: ${Array.from(trimmed.substring(0, 20)).map(c => c.charCodeAt(0)).join(',')}`);
 
   // Validate token format
   if (!trimmed.startsWith('ghp_') && !trimmed.startsWith('github_pat_') && !trimmed.startsWith('gho_')) {
@@ -307,6 +331,7 @@ async function handlePatSubmission(token, chatId, text, kv) {
     const githubUser = await getAuthenticatedUser(trimmed);
     console.log(`Token verified! GitHub user: ${githubUser.login}`);
 
+    // Save user first
     await putUser(kv, chatId, {
       chat_id: chatId,
       github_token: trimmed,
@@ -315,15 +340,25 @@ async function handlePatSubmission(token, chatId, text, kv) {
       updated_at: new Date().toISOString(),
     });
 
-    // Also store baseline snapshot
-    const repos = await getUserRepos(trimmed);
+    // Store global snapshot
     await upsertSnapshot(kv, chatId, '__global__', 0, 0, githubUser.followers);
-    for (const repo of repos) {
-      await upsertSnapshot(kv, chatId, repo.full_name, repo.stars, repo.forks, 0);
+
+    // Try to fetch repos (might fail due to rate limiting)
+    let repoCount = 0;
+    try {
+      const repos = await getUserRepos(trimmed);
+      repoCount = repos.length;
+      for (const repo of repos) {
+        await upsertSnapshot(kv, chatId, repo.full_name, repo.stars, repo.forks, 0);
+      }
+    } catch (repoErr) {
+      console.warn(`Could not fetch repos (non-fatal): ${repoErr.message}`);
+      // Continue anyway - token is valid, we just can't fetch repos yet
     }
 
+    const repoMsg = repoCount > 0 ? `Monitoring ${repoCount} repositories.` : 'Repos will be checked on next poll.';
     await editMessage(token, chatId, chatMessage.result.message_id,
-      `\u2705 *Connected!*\n\nMonitoring your account as \`@${githubUser.login}\`. You'll receive notifications for new stars, forks, and followers.`,
+      `\u2705 *Connected!*\n\nMonitoring your account as \`@${githubUser.login}\` (${githubUser.followers} followers).\n${repoMsg}\nYou'll receive notifications for new stars, forks, and followers.`,
     );
   } catch (err) {
     console.error(`GitHub auth failed for chat ${chatId}:`, err.message);
@@ -355,7 +390,8 @@ async function pollAllUsers(token, kv) {
       }
     } catch (err) {
       console.error(`Poll error for ${user.github_login}:`, err.message);
-      if (err.message.includes('401') || err.message.includes('403')) {
+      // Only delete user on 401 (unauthorized) - 403 might be rate limiting
+      if (err.message.includes('401')) {
         try {
           await sendMessage(token, user.chat_id,
             `\u26A0\uFE0F Your GitHub token is no longer valid. Use /connect to re-authorize.`,
@@ -454,10 +490,24 @@ export default {
         return Response.json({ error: 'Add ?token=YOUR_TOKEN to URL' });
       }
       try {
-        const user = await getAuthenticatedUser(testToken);
-        return Response.json({ success: true, login: user.login, followers: user.followers });
+        // Raw test to see exact response
+        const res = await fetch(`${GITHUB_API}/user`, {
+          headers: {
+            Authorization: `token ${testToken}`,
+            Accept: 'application/vnd.github.v3+json',
+            'User-Agent': 'shinotbot-cloudflare-worker',
+          },
+        });
+        const rawText = await res.text();
+        let json;
+        try { json = JSON.parse(rawText); } catch (e) { json = null; }
+        return Response.json({
+          status: res.status,
+          isJson: !!json,
+          data: json || rawText.substring(0, 200),
+        });
       } catch (err) {
-        return Response.json({ success: false, error: err.message });
+        return Response.json({ error: err.message });
       }
     }
 
