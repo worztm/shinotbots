@@ -429,6 +429,35 @@ async function handleMessage(token, message, kv) {
   }
 }
 
+// ============ Scheduled Messages ============
+
+async function checkScheduledMessages(token, kv) {
+  const list = await kv.list({ prefix: 'schedule:' });
+  const now = new Date();
+  
+  for (const key of list.keys) {
+    const sched = await kv.get(key.name, 'json');
+    if (!sched || sched.sent) continue;
+    
+    const sendAt = new Date(sched.sendAt);
+    if (now >= sendAt) {
+      console.log(`Sending scheduled message: ${sched.id}`);
+      const users = await listAllUsers(kv);
+      for (const user of users) {
+        try {
+          await sendMessage(token, user.chat_id, sched.message);
+        } catch (err) {
+          console.error(`Scheduled broadcast failed for ${user.chat_id}:`, err.message);
+        }
+      }
+      // Mark as sent
+      sched.sent = true;
+      sched.sentAt = now.toISOString();
+      await kv.put(key.name, JSON.stringify(sched));
+    }
+  }
+}
+
 // ============ Main Worker ============
 
 export default {
@@ -529,7 +558,7 @@ export default {
         let failed = 0;
         for (const user of users) {
           try {
-            await sendMessage(env.TELEGRAM_BOT_TOKEN, user.chat_id, message, { parse_mode: 'HTML' });
+            await sendMessage(env.TELEGRAM_BOT_TOKEN, user.chat_id, message);
             sent++;
           } catch (err) {
             console.error(`Broadcast failed for ${user.chat_id}:`, err.message);
@@ -542,11 +571,45 @@ export default {
       }
     }
 
+    // Schedule endpoint - schedule a broadcast for later
+    if (url.pathname === '/schedule' && request.method === 'POST') {
+      try {
+        const body = await request.json();
+        const { message, sendAt } = body;
+        if (!message || !sendAt) {
+          return Response.json({ error: 'Need message and sendAt (ISO timestamp)' }, { status: 400 });
+        }
+        const scheduleId = Date.now().toString(36);
+        await env.DB.put(`schedule:${scheduleId}`, JSON.stringify({
+          id: scheduleId,
+          message,
+          sendAt,
+          sent: false,
+          created: new Date().toISOString(),
+        }));
+        return Response.json({ success: true, id: scheduleId, sendAt });
+      } catch (err) {
+        return Response.json({ error: err.message }, { status: 500 });
+      }
+    }
+
+    // List scheduled messages
+    if (url.pathname === '/schedules' && request.method === 'GET') {
+      const list = await env.DB.list({ prefix: 'schedule:' });
+      const schedules = [];
+      for (const key of list.keys) {
+        const sched = await env.DB.get(key.name, 'json');
+        if (sched) schedules.push(sched);
+      }
+      return Response.json({ schedules });
+    }
+
     return new Response('Not Found', { status: 404 });
   },
 
   // Cron trigger - polls GitHub for changes
   async scheduled(event, env, ctx) {
     await pollAllUsers(env.TELEGRAM_BOT_TOKEN, env.DB);
+    await checkScheduledMessages(env.TELEGRAM_BOT_TOKEN, env.DB);
   },
 };
