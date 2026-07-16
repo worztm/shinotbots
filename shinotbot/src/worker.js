@@ -267,8 +267,13 @@ async function handleStatus(token, chatId, kv) {
     await sendMessage(token, chatId, `\u274C No GitHub account connected. Use /connect to link your account.`);
     return;
   }
+  const date = new Date(user.created_at);
+  const formatted = date.toLocaleDateString('en-US', { 
+    year: 'numeric', month: 'short', day: 'numeric',
+    hour: '2-digit', minute: '2-digit' 
+  });
   await sendMessage(token, chatId,
-    `\u2705 Connected as \`@${user.github_login}\` since ${user.created_at}`,
+    `\u2705 Connected as \`@${user.github_login}\` since ${formatted}`,
   );
 }
 
