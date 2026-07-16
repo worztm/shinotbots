@@ -9,7 +9,7 @@ id = "20dfebb147ea4500ae9e4b589c5fd7bb"
 
 # Cron trigger - polls every 60 seconds
 [triggers]
-crons = ["* * * * *"]
+crons = ["*/5 * * * *"]
 
 # Environment variables (set via: wrangler secret put TELEGRAM_BOT_TOKEN)
 # TELEGRAM_BOT_TOKEN - your Telegram bot token from BotFather
