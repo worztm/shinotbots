@@ -1,15 +1,16 @@
 {
   "name": "shinotbot",
-  "version": "1.0.0",
-  "description": "Telegram bot for GitHub notifications (stars, forks, followers)",
-  "main": "src/index.js",
+  "version": "2.0.0",
+  "description": "Telegram bot for GitHub notifications (stars, forks, followers) - Cloudflare Worker",
+  "main": "src/worker.js",
   "scripts": {
-    "start": "node src/index.js",
-    "dev": "node --watch src/index.js"
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "tail": "wrangler tail",
+    "setup": "node scripts/setup.js"
   },
-  "dependencies": {
-    "node-telegram-bot-api": "^0.66.0",
-    "node-fetch": "^2.7.0",
-    "dotenv": "^16.4.0"
+  "dependencies": {},
+  "devDependencies": {
+    "wrangler": "^4.0.0"
   }
 }
