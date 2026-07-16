@@ -516,6 +516,32 @@ export default {
       }
     }
 
+    // Broadcast endpoint - send announcement to all users
+    if (url.pathname === '/broadcast' && request.method === 'POST') {
+      try {
+        const body = await request.json();
+        const message = body.message;
+        if (!message) {
+          return Response.json({ error: 'No message provided' }, { status: 400 });
+        }
+        const users = await listAllUsers(env.DB);
+        let sent = 0;
+        let failed = 0;
+        for (const user of users) {
+          try {
+            await sendMessage(env.TELEGRAM_BOT_TOKEN, user.chat_id, message, { parse_mode: 'HTML' });
+            sent++;
+          } catch (err) {
+            console.error(`Broadcast failed for ${user.chat_id}:`, err.message);
+            failed++;
+          }
+        }
+        return Response.json({ success: true, sent, failed, total: users.length });
+      } catch (err) {
+        return Response.json({ error: err.message }, { status: 500 });
+      }
+    }
+
     return new Response('Not Found', { status: 404 });
   },
 
