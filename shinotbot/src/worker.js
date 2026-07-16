@@ -46,8 +46,11 @@ async function getAuthenticatedUser(token) {
   const res = await fetch(`${GITHUB_API}/user`, {
     headers: { Authorization: `token ${token}`, Accept: 'application/vnd.github.v3+json' },
   });
-  if (!res.ok) throw new Error(`GitHub API /user failed: ${res.status}`);
-  return res.json();
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(`GitHub API error ${res.status}: ${data.message || 'Unknown error'}`);
+  }
+  return data;
 }
 
 async function getUserRepos(token) {
@@ -288,9 +291,11 @@ async function handlePatSubmission(token, chatId, text, kv) {
   }
 
   const trimmed = text.trim();
-  if (!trimmed.startsWith('ghp_') && !trimmed.startsWith('github_pat_') && trimmed.length < 10) {
+
+  // Validate token format
+  if (!trimmed.startsWith('ghp_') && !trimmed.startsWith('github_pat_') && !trimmed.startsWith('gho_')) {
     await sendMessage(token, chatId,
-      `\u26A0\uFE0F That doesn't look like a valid GitHub PAT. It should start with \`ghp_\` or \`github_pat_\`. Try again.`,
+      `\u26A0\uFE0F That doesn't look like a valid GitHub PAT.\n\nExpected format:\n\`ghp_...\` or \`github_pat_...\`\n\nPlease try again.`,
     );
     return;
   }
@@ -298,7 +303,9 @@ async function handlePatSubmission(token, chatId, text, kv) {
   const chatMessage = await sendMessage(token, chatId, `\u23F3 Verifying your token...`);
 
   try {
+    console.log(`Verifying token for chat ${chatId}, token starts with: ${trimmed.substring(0, 7)}...`);
     const githubUser = await getAuthenticatedUser(trimmed);
+    console.log(`Token verified! GitHub user: ${githubUser.login}`);
 
     await putUser(kv, chatId, {
       chat_id: chatId,
@@ -319,15 +326,10 @@ async function handlePatSubmission(token, chatId, text, kv) {
       `\u2705 *Connected!*\n\nMonitoring your account as \`@${githubUser.login}\`. You'll receive notifications for new stars, forks, and followers.`,
     );
   } catch (err) {
-    try {
-      await editMessage(token, chatId, chatMessage.result.message_id,
-        `\u274C Invalid or expired token. Make sure you have the correct token with \`read:user\` and \`public_repo\` scopes.`,
-      );
-    } catch {
-      await sendMessage(token, chatId,
-        `\u274C Invalid or expired token. Make sure you have the correct token with \`read:user\` and \`public_repo\` scopes.`,
-      );
-    }
+    console.error(`GitHub auth failed for chat ${chatId}:`, err.message);
+    await editMessage(token, chatId, chatMessage.result.message_id,
+      `\u274C *Token verification failed*\n\nError: ${err.message}\n\nPlease check that:\n1. Token is valid and not expired\n2. Token has \`read:user\` scope\n3. You copied the full token`,
+    );
   }
 }
 
@@ -442,6 +444,20 @@ export default {
         });
       } catch (err) {
         return Response.json({ error: err.message }, { status: 500 });
+      }
+    }
+
+    // Debug endpoint - test GitHub token
+    if (url.pathname === '/test-token') {
+      const testToken = url.searchParams.get('token');
+      if (!testToken) {
+        return Response.json({ error: 'Add ?token=YOUR_TOKEN to URL' });
+      }
+      try {
+        const user = await getAuthenticatedUser(testToken);
+        return Response.json({ success: true, login: user.login, followers: user.followers });
+      } catch (err) {
+        return Response.json({ success: false, error: err.message });
       }
     }
 
