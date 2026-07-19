@@ -1,16 +1,19 @@
 {
   "name": "shinotbot",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "description": "Telegram bot for GitHub notifications (stars, forks, followers) - Cloudflare Worker",
-  "main": "src/worker.js",
+  "main": "src/worker.ts",
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "tail": "wrangler tail",
-    "setup": "node scripts/setup.js"
+    "setup": "node scripts/setup.js",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {},
   "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260710.1",
+    "typescript": "^5.7.0",
     "wrangler": "^4.0.0"
   }
 }

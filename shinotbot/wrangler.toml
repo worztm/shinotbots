@@ -1,16 +1,16 @@
 name = "shinotbot"
-main = "src/worker.js"
-compatibility_date = "2024-01-01"
+main = "src/worker.ts"
+compatibility_date = "2024-12-01"
+compatibility_flags = ["nodejs_compat"]
 
 # KV namespace for persistent storage
 [[kv_namespaces]]
 binding = "DB"
 id = "20dfebb147ea4500ae9e4b589c5fd7bb"
 
-# Cron trigger - polls every 60 seconds
+# Cron trigger - polls every 5 minutes
 [triggers]
 crons = ["*/5 * * * *"]
 
 # Environment variables (set via: wrangler secret put TELEGRAM_BOT_TOKEN)
 # TELEGRAM_BOT_TOKEN - your Telegram bot token from BotFather
-# BOT_SECRET - random string for webhook security

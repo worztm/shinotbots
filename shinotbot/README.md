@@ -1,108 +1,106 @@
 # Shinotbot
 
-Telegram bot for GitHub notifications. Runs on Cloudflare Workers.
+A Telegram bot for GitHub notifications — monitors stars, forks, followers, and new repos, then sends updates to your Telegram chat.
 
-## What It Does
+Built as a **Cloudflare Worker** in **TypeScript**, using KV for storage and cron triggers for polling.
 
-The bot monitors your GitHub account and sends you updates about stars, forks, followers, and new repos straight to your Telegram chat. It polls the GitHub API every minute and notifies you of any changes.
+## Architecture
 
-## Features
+```
+src/
+├── worker.ts         # Entry point — fetch handler + cron handler
+├── types.ts          # TypeScript types (Env, Telegram, GitHub, etc.)
+├── telegram.ts       # Telegram Bot API helpers (sendMessage, tg, escapeMarkdown)
+├── github.ts         # GitHub API helpers (getAuthenticatedUser, getUserRepos)
+├── store.ts          # KV storage helpers (users, snapshots, scheduled messages)
+├── notifications.ts  # Change detection & notification formatting
+├── handlers.ts       # Bot command handlers (/start, /connect, /status, etc.)
+├── router.ts         # Message router — dispatches to correct handler
+└── poller.ts         # Polling logic — checks all users for GitHub changes
+```
+
+## How It Works
+
+1. User sends `/connect` and provides a GitHub Personal Access Token
+2. The bot verifies the token, stores it (encrypted at rest in KV), and creates a baseline snapshot of the user's repos
+3. A **cron trigger** runs every 5 minutes (`*/5 * * * *`):
+   - Fetches current GitHub state (followers, stars, forks) for each user
+   - Compares against the stored snapshot
+   - Sends a Telegram notification for any detected changes
+   - Updates the snapshot for the next comparison
+4. Webhook-based message handling responds instantly to user commands
+
+## What Gets Notified
 
 - ⭐ New stars on your repos
-- 🍴 New forks of your repos  
+- 🍴 New forks of your repos
 - 👤 New followers
-- 🎉 New repositories
+- 🎉 New repositories you create
 
 ## Setup
 
 ### Prerequisites
 
-- [Cloudflare account](https://dash.cloudflare.com/sign-up)
-- [Telegram bot token](https://t.me/BotFather) from @BotFather
-- [GitHub Personal Access Token](https://github.com/settings/tokens) with `read:user` and `public_repo` scopes
+- Node.js 18+
+- A Telegram bot token from [BotFather](https://t.me/botfather)
+- A Cloudflare account
+- A GitHub Personal Access Token (`read:user` + `public_repo` scopes)
 
-### Quick Setup
+### Installation
 
 ```bash
-# Install dependencies
 npm install
-
-# Login to Cloudflare
-wrangler login
-
-# Run the setup script (creates KV, sets secrets, deploys)
-npm run setup
 ```
 
-### Manual Setup
+### Configuration
+
+Set up the required secret:
 
 ```bash
-# Login to Cloudflare
-wrangler login
-
-# Create KV namespace
-wrangler kv namespace create "DB"
-# Update wrangler.toml with the returned ID
-
-# Set your Telegram bot token
-wrangler secret put TELEGRAM_BOT_TOKEN
-
-# Deploy
-npm run deploy
-
-# Set up webhook (replace YOUR_WORKER_URL)
-curl -X POST "https://YOUR_WORKER_URL/setup" \
-  -H "Content-Type: application/json" \
-  -d '{"webhook_url":"https://YOUR_WORKER_URL"}'
+npx wrangler secret put TELEGRAM_BOT_TOKEN
 ```
 
-## Usage
+### Deploy
 
-1. Open Telegram and find your bot
-2. Send `/start` to see the welcome message
-3. Send `/connect` and paste your GitHub Personal Access Token
-4. The bot will verify your token and start monitoring
+```bash
+npm run deploy
+```
+
+### Set up Telegram webhook
+
+```bash
+curl -X POST https://YOUR_WORKER.workers.dev/setup \
+  -H "Content-Type: application/json" \
+  -d '{"webhook_url":"https://YOUR_WORKER.workers.dev"}'
+```
 
 ### Commands
 
-- `/start` - Welcome message
-- `/connect` - Link your GitHub account
-- `/status` - Check connection status
-- `/disconnect` - Remove GitHub connection
-- `/help` - List commands
+| Command | Description |
+|---------|-------------|
+| `/start` | Introductory message |
+| `/connect` | Link your GitHub account with a PAT |
+| `/status` | Check your connection status |
+| `/disconnect` | Remove your GitHub account |
+| `/help` | Show available commands |
 
 ## Development
 
 ```bash
-# Run locally with hot reload
-npm run dev
-
-# View live logs
-npm run tail
-
-# Deploy updates
-npm run deploy
+npm run dev          # Local dev server
+npm run typecheck    # TypeScript type checking
+npm run tail         # View production logs
+npm run deploy       # Deploy to Cloudflare
 ```
 
-## Architecture
+## Tech Stack
 
-- **Runtime**: Cloudflare Workers (V8 isolates)
-- **Storage**: Cloudflare KV for user data and snapshots
-- **Triggers**: Cron job every 60 seconds for polling
-- **Webhook**: Telegram Bot API webhook (no polling)
-
-## Project Structure
-
-```
-shinotbot/
-├── src/
-│   └── worker.js       # Main worker code
-├── scripts/
-│   └── setup.js        # One-click setup script
-├── wrangler.toml       # Cloudflare configuration
-├── package.json
-└── README.md
-```
+- **Runtime:** Cloudflare Workers (edge)
+- **Language:** TypeScript
+- **Storage:** Cloudflare KV
+- **Scheduling:** Cron Triggers (every 5 minutes)
+- **Bot API:** Telegram Bot API (webhook mode)
+- **Data Source:** GitHub REST API v3
 
 ## License
 
