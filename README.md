@@ -1,63 +1,107 @@
-Shinotbot
+# Shinotbot
 
-Shinotbot is a Telegram bot for GitHub notifications. It watches your GitHub account and sends you updates about stars, forks, followers, and new repos straight to your Telegram chat.
+A Telegram bot for GitHub notifications — monitors stars, forks, followers, and new repos, then sends updates to your Telegram chat.
 
-What It Does
+Built as a **Cloudflare Worker** in **TypeScript**, using KV for storage and cron triggers for polling.
 
-The bot polls the GitHub API every minute by default and compares the latest data to what it saw last time. If anything changed, it sends you a message with the details. No push tokens or webhooks needed.
+## Architecture
 
-Setup
+```
+src/
+├── worker.ts         # Entry point — fetch handler + cron handler
+├── types.ts          # TypeScript types (Env, Telegram, GitHub, etc.)
+├── telegram.ts       # Telegram Bot API helpers (sendMessage, tg, escapeMarkdown)
+├── github.ts         # GitHub API helpers (getAuthenticatedUser, getUserRepos)
+├── store.ts          # KV storage helpers (users, snapshots, scheduled messages)
+├── notifications.ts  # Change detection & notification formatting
+├── handlers.ts       # Bot command handlers (/start, /connect, /status, etc.)
+├── router.ts         # Message router — dispatches to correct handler
+└── poller.ts         # Polling logic — checks all users for GitHub changes
+```
 
+## How It Works
+
+1. User sends `/connect` and provides a GitHub Personal Access Token
+2. The bot verifies the token, stores it (encrypted at rest in KV), and creates a baseline snapshot of the user's repos
+3. A **cron trigger** runs every 5 minutes (`*/5 * * * *`):
+   - Fetches current GitHub state (followers, stars, forks) for each user
+   - Compares against the stored snapshot
+   - Sends a Telegram notification for any detected changes
+   - Updates the snapshot for the next comparison
+4. Webhook-based message handling responds instantly to user commands
+
+## What Gets Notified
+
+- ⭐ New stars on your repos
+- 🍴 New forks of your repos
+- 👤 New followers
+- 🎉 New repositories you create
+
+## Setup
+
+### Prerequisites
+
+- Node.js 18+
+- A Telegram bot token from [BotFather](https://t.me/botfather)
+- A Cloudflare account
+- A GitHub Personal Access Token (`read:user` + `public_repo` scopes)
+
+### Installation
+
+```bash
 npm install
+```
 
-Create a .env file:
+### Configuration
 
-TELEGRAM_BOT_TOKEN=your_bot_token_here
-POLL_INTERVAL_MS=60000
-DB_PATH=./data/shinotbot.db
+Set up the required secret:
 
-TELEGRAM_BOT_TOKEN comes from BotFather, the rest are optional with sensible defaults.
+```bash
+npx wrangler secret put TELEGRAM_BOT_TOKEN
+```
 
-Running It
+### Deploy
 
-npm start
+```bash
+npm run deploy
+```
 
-Or npm run dev if you want auto-reload during development.
+### Set up Telegram webhook
 
-Usage
+```bash
+curl -X POST https://YOUR_WORKER.workers.dev/setup \
+  -H "Content-Type: application/json" \
+  -d '{"webhook_url":"https://YOUR_WORKER.workers.dev"}'
+```
 
-Start a chat with your bot and use /start to get going. Then /connect and paste your GitHub Personal Access Token. The bot will verify it and start monitoring.
+### Commands
 
-To get a PAT from GitHub, go to Settings > Developer settings > Personal access tokens, generate a classic token with read:user and public_repo scopes, then send it to the bot.
+| Command | Description |
+|---------|-------------|
+| `/start` | Introductory message |
+| `/connect` | Link your GitHub account with a PAT |
+| `/status` | Check your connection status |
+| `/disconnect` | Remove your GitHub account |
+| `/help` | Show available commands |
 
-Commands
+## Development
 
-/start - intro and welcome message
-/connect - link your github account
-/status - see who you're currently connected as
-/disconnect - remove the linked account
-/help - list commands
+```bash
+npm run dev          # Local dev server
+npm run typecheck    # TypeScript type checking
+npm run tail         # View production logs
+npm run deploy       # Deploy to Cloudflare
+```
 
-Each Telegram user can connect their own GitHub account independently.
+## Tech Stack
 
-How Data Works
+- **Runtime:** Cloudflare Workers (edge)
+- **Language:** TypeScript
+- **Storage:** Cloudflare KV
+- **Scheduling:** Cron Triggers (every 5 minutes)
+- **Bot API:** Telegram Bot API (webhook mode)
+- **Data Source:** GitHub REST API v3
 
-Data lives in a plain JSON file on disk. On the first poll cycle the bot builds a baseline of your current stats. After that, every subsequent check computes the difference and notifies you of any changes. If the token stops working, it lets you know and disconnects you automatically.
-
-Project Layout
-
-src/index.js - entry point
-src/config.js - environment variables
-src/bot.js - telegram bot commands
-src/github.js - github API calls
-src/poller.js - polling logic
-src/notification.js - change detection and message formatting
-src/store.js - json file persistence
-
-Dependencies
-
-Node 18+, node-telegram-bot-api, node-fetch, dotenv. No database server.
-
-License
+## License
 
 MIT
